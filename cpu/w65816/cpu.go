@@ -1,6 +1,10 @@
 package w65816
 
-import "github.com/apoloval/bitwise/logic"
+import (
+	"fmt"
+
+	"github.com/apoloval/bitwise/logic"
+)
 
 type CPU struct {
 	reset logic.Wire[logic.TriStateLevel]
@@ -10,12 +14,13 @@ type CPU struct {
 	dout logic.TriStateRegister[uint8]
 	rwb  logic.TriStateRegister[logic.Level]
 
-	regs  RegsBank
-	state func(logic.ClockEvent)
+	regs        RegsBank
+	handleClock func(*CPU, logic.ClockEvent)
 }
 
 func New() *CPU {
-	return &CPU{}
+	cpu := &CPU{}
+	return cpu
 }
 
 func (cpu *CPU) ConnectClock(clk *logic.Clock) {
@@ -40,10 +45,10 @@ func (cpu *CPU) Data() logic.Wire[logic.TriState[uint8]] {
 
 func (cpu *CPU) OnClockEvent(ev logic.ClockEvent) {
 	if val := cpu.reset.Sample(); val.Is(logic.Low) {
-		cpu.state = cpu.onReset
+		cpu.handleClock = (*CPU).onReset
 	}
-	if cpu.state != nil {
-		cpu.state(ev)
+	if cpu.handleClock != nil {
+		cpu.handleClock(cpu, ev)
 	}
 }
 
@@ -62,7 +67,7 @@ func (cpu *CPU) onReset(ev logic.ClockEvent) {
 
 		// TODO: reset control signals
 
-		cpu.state = cpu.onOpCodeFetch
+		cpu.handleClock = (*CPU).onOpCodeFetch
 	}
 }
 
@@ -75,7 +80,7 @@ func (cpu *CPU) onOpCodeFetch(ev logic.ClockEvent) {
 	case logic.RisingEdge:
 		cpu.dout.Undrive()
 		cpu.rwb.Undrive()
-		cpu.state = cpu.onOpCodeDecode
+		cpu.handleClock = (*CPU).onOpCodeDecode
 	}
 }
 
@@ -84,9 +89,13 @@ func (cpu *CPU) onOpCodeDecode(ev logic.ClockEvent) {
 	case logic.FallingEdge:
 		cpu.regs.IR = cpu.din.Sample().Value
 	case logic.RisingEdge:
-		// TODO: assuming here we will get a NOP (0xEA)
-		cpu.execNop()
-		cpu.state = cpu.onOpCodeFetch
+		switch cpu.regs.IR {
+		case 0xEA:
+			cpu.execNop()
+			cpu.handleClock = (*CPU).onOpCodeFetch
+		default:
+			panic(fmt.Errorf("unsupported opcode: 0x%X", cpu.regs.IR))
+		}
 	}
 }
 

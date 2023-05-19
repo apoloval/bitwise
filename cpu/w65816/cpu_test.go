@@ -12,9 +12,11 @@ func BenchmarkCPU(b *testing.B) {
 	var rst logic.TriStateRegister[logic.Level]
 
 	cpu := w65816.New()
-	cpu.ConnectClock(&clock)
-	cpu.ConnectReset(rst)
+	cpu.ConnectReset(&rst)
 	cpu.ConnectDin(logic.Fixed(logic.Value[uint8](0xEA)))
+
+	clock.Register(&rst)
+	clock.Register(cpu)
 
 	rst.Drive(logic.Low)
 	clock.Step(2)
